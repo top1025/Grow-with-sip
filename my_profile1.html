@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Aapka Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Check Login & Realtime Profile Sync
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // User identifier display (Phone / Email / UID)
+                const userIdentifier = user.phoneNumber || user.email || user.uid;
+                document.getElementById('profilePhone').innerText = userIdentifier;
+
+                // Firestore doc reference: users/{user.uid}
+                const userDocRef = doc(db, "users", user.uid);
+
+                // Live Sync Listener across devices
+                onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const userData = docSnap.data();
+
+                        const balance = Number(userData.balance || 0).toFixed(2);
+                        const totalIncome = Number(userData.totalIncome || 0).toFixed(2);
+                        const rechargeAmount = Number(userData.rechargeAmount || 0).toFixed(2);
+
+                        // UI Update
+                        document.getElementById('userBalance').innerText = "₹" + balance;
+                        document.getElementById('totalIncome').innerText = "₹" + totalIncome;
+                        document.getElementById('rechargeAmount').innerText = "₹" + rechargeAmount;
+                    } else {
+                        console.log("User data document not found!");
+                    }
+                }, (error) => {
+                    console.error("Firestore Profile Sync Error:", error);
+                });
+
+            } else {
+                // User logged in nahi hai toh Login page par redirect karein
+                window.location.href = "login.html";
+            }
+        });
+
+        // Firebase Logout Function
+        window.logout = function() {
+            if (confirm("Kya aap logout karna chahte hain?")) {
+                signOut(auth).then(() => {
+                    window.location.href = "login.html";
+                }).catch((error) => {
+                    console.error("Logout Error:", error);
+                    alert("Logout nahi ho paya, fir se koshish karein.");
+                });
+            }
+        };
+    </script>
+
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f0f2f5; 
+            margin: 0; 
+            padding-bottom: 80px; 
+        }
+
+        /* Header BG with Background Image */
+        .header-bg { 
+            background: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('https://i.ibb.co/hxZkVcfD/profile.png') no-repeat center center / cover; 
+            height: 180px; 
+            padding: 20px; 
+            color: white; 
+            display: flex; 
+            align-items: flex-start; 
+        }
+
+        .user-profile { 
+            display: flex; 
+            align-items: center; 
+            gap: 15px; 
+            margin-top: 10px;
+        }
+
+        .avatar { 
+            width: 60px; 
+            height: 60px; 
+            background-color: #ffffff;
+            background-image: url('https://cdn-icons-png.flaticon.com/512/3135/3135715.png'); 
+            background-size: cover; 
+            border-radius: 50%; 
+            border: 3px solid rgba(255,255,255,0.4); 
+        }
+
+        .id-badge { 
+            background: rgba(255,255,255,0.2); 
+            padding: 3px 10px; 
+            border-radius: 12px; 
+            font-size: 11px; 
+            margin-top: 5px; 
+            display: inline-block;
+        }
+
+        .stats-container { 
+            display: flex; 
+            justify-content: space-around; 
+            background: white; 
+            margin: -50px 15px 20px 15px; 
+            padding: 18px 10px; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.08); 
+        }
+
+        .stat { 
+            text-align: center; 
+            flex: 1;
+        }
+
+        .val { 
+            font-weight: 800; 
+            color: #1a237e; 
+            display: block; 
+            font-size: 16px; 
+            margin-top: 5px; 
+        }
+
+        .label { 
+            font-size: 12px; 
+            color: #777; 
+        }
+
+        .menu-list { 
+            background: white; 
+            margin: 0 15px; 
+            border-radius: 15px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03); 
+            overflow: hidden;
+        }
+
+        .item { 
+            padding: 16px 20px; 
+            border-bottom: 1px solid #f2f2f2; 
+            display: flex; 
+            align-items: center; 
+            gap: 15px; 
+            font-size: 14px; 
+            font-weight: 500; 
+            color: #333; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
+
+        .item:active {
+            background-color: #f9f9f9;
+        }
+
+        .item:last-child {
+            border-bottom: none;
+        }
+
+        .arrow { 
+            margin-left: auto; 
+            color: #ccc; 
+            font-weight: bold;
+        }
+
+        .bottom-nav { 
+            position: fixed; 
+            bottom: 0; 
+            width: 100%; 
+            background: white; 
+            display: flex; 
+            justify-content: space-around; 
+            padding: 10px 0; 
+            border-top: 1px solid #eee; 
+            z-index: 100; 
+        }
+
+        .nav-item { 
+            text-align: center; 
+            font-size: 11px; 
+            font-weight: bold; 
+            color: #666; 
+            cursor: pointer; 
+        }
+
+        .nav-item.active {
+            color: #1a237e;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header-bg">
+    <div class="user-profile">
+        <div class="avatar"></div> 
+        <div>
+            <div style="font-size: 18px; font-weight: bold;" id="profilePhone">Loading...</div>
+            <div class="id-badge">VIP Member</div>
+        </div>
+    </div>
+</div>
+
+<div class="stats-container">
+    <div class="stat"><span class="label">Balance</span><span class="val" id="userBalance">₹0.00</span></div>
+    <div class="stat"><span class="label">Total Income</span><span class="val" id="totalIncome">₹0.00</span></div>
+    <div class="stat"><span class="label">Recharge</span><span class="val" id="rechargeAmount">₹0.00</span></div>
+</div>
+
+<div class="menu-list">
+    <div class="item" onclick="window.location.href='devices1.html'">📦 <span>My Devices</span> <span class="arrow">&gt;</span></div>
+    <div class="item" onclick="window.location.href='personal_info1.html'">👤 <span>Personal Information</span> <span class="arrow">&gt;</span></div>
+    <div class="item" onclick="window.location.href='income_details1.html'">📊 <span>Income Details</span> <span class="arrow">&gt;</span></div>
+    <div class="item" onclick="window.location.href='withdrawal_details1.html'">💳 <span>Withdrawal History</span> <span class="arrow">&gt;</span></div>
+    <div class="item" onclick="window.location.href='recharge_details1.html'">📱 <span>Recharge History</span> <span class="arrow">&gt;</span></div>
+    <div class="item" onclick="window.location.href='about_us1.html'">🏢 <span>About Us</span> <span class="arrow">&gt;</span></div>
+    <div class="item" style="color: #d32f2f;" onclick="logout()">🚪 <span>Log Out</span> <span class="arrow">&gt;</span></div>
+</div>
+
+<div class="bottom-nav">
+    <div class="nav-item" onclick="window.location.href='index1.html'">📋<br>Plan</div>
+    <div class="nav-item" onclick="window.location.href='share1.html'">👥<br>Share</div>
+    <div class="nav-item" onclick="window.location.href='team1.html'">📈<br>Team</div>
+    <div class="nav-item active" onclick="window.location.href='my_profile1.html'">👤<br>My</div>
+</div>
+
+</body>
+</html>
+

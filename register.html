@@ -1,0 +1,265 @@
+
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biviman Miner - Register</title>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background: #0a192f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 20px;
+            width: 85%;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .active {
+            border-bottom: 3px solid #27ae60;
+            color: #27ae60;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: none;
+            background: #f4f4f4;
+            border-radius: 10px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        .reg-btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 25px;
+            background: #1a2a6c;
+            color: white;
+            font-weight: bold;
+            margin-top: 15px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: opacity 0.2s;
+        }
+        .reg-btn:disabled {
+            background: #7a8ba3;
+            cursor: not-allowed;
+        }
+    </style>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc, 
+            getDocs, 
+            collection, 
+            query, 
+            where, 
+            updateDoc, 
+            arrayUnion 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Config Details
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // URL Ref Code Auto Detect
+        window.addEventListener('DOMContentLoaded', () => {
+            const refCode = new URLSearchParams(window.location.search).get('ref');
+            if (refCode) {
+                const invField = document.getElementById('invCode');
+                invField.value = refCode;
+                invField.readOnly = true;
+            }
+        });
+
+        // Register Function
+        window.registerUser = async function() {
+            const phone = document.getElementById('phone').value.trim();
+            const pass = document.getElementById('pass').value;
+            const cpass = document.getElementById('cpass').value;
+            const wpass = document.getElementById('wpass').value;
+            const invCode = document.getElementById('invCode').value.trim();
+            const regBtn = document.getElementById('regBtn');
+
+            const cleanPhone = phone.replace(/\D/g, ''); 
+            if (cleanPhone.length !== 10) {
+                alert("❌ Kripya sahi 10 ankon ka phone number dalein!");
+                return;
+            }
+            if (pass.length < 6) { 
+                alert("❌ Password kam se kam 6 characters ka hona chahiye!");
+                return;
+            }
+            if (pass !== cpass) {
+                alert("❌ Password aur Confirm Password alag hain!");
+                return;
+            }
+            if (!/^\d{6}$/.test(wpass)) {
+                alert("❌ Withdrawal Password theek 6 ankon ka hona chahiye!");
+                return;
+            }
+
+            regBtn.disabled = true;
+            regBtn.innerText = "Registering...";
+
+            try {
+                // Firebase Auth ke liye dummy email format
+                const dummyEmail = `${cleanPhone}@bivimanminer.com`;
+
+                // 1. Firebase Auth user creation
+                const userCredential = await createUserWithEmailAndPassword(auth, dummyEmail, pass);
+                const user = userCredential.user;
+
+                // 2. Parent find out using Invitation Code
+                let level1Parent = null;
+                let level2Parent = null;
+                let level3Parent = null;
+
+                if (invCode) {
+                    const q1 = query(collection(db, "users"), where("myReferralCode", "==", invCode));
+                    const querySnap1 = await getDocs(q1);
+                    if (!querySnap1.empty) {
+                        const parentDoc1 = querySnap1.docs[0];
+                        level1Parent = parentDoc1.id;
+                        const parentData1 = parentDoc1.data();
+                        
+                        // Fetch Level 2 & Level 3 Parents
+                        level2Parent = parentData1.referredBy || parentData1.level1Parent || null;
+                        level3Parent = parentData1.level2Parent || null;
+                    }
+                }
+
+                const myRefCode = cleanPhone.slice(-6);
+
+                // 3. Document payload setup (Updated for 20%, 2%, 1% structure)
+                const userData = {
+                    uid: user.uid,
+                    mobile: cleanPhone,
+                    phone: cleanPhone,
+                    password: pass,
+                    withdrawPassword: wpass,
+                    withdrawalPassword: wpass,
+                    referredByCode: invCode || null,
+                    myReferralCode: myRefCode,
+                    
+                    // Referral Relationships
+                    referredBy: level1Parent,       // Direct Level 1 Parent
+                    level1Parent: level1Parent,
+                    level2Parent: level2Parent,     // Level 2 Parent
+                    level3Parent: level3Parent,     // Level 3 Parent
+                    
+                    commissionRates: {
+                        level1: 0.20, // 20%
+                        level2: 0.02, // 2%
+                        level3: 0.01  // 1%
+                    },
+                    team: {
+                        level1: [],
+                        level2: [],
+                        level3: []
+                    },
+                    balance: 0,
+                    walletBalance: 0,
+                    totalIncome: 0,
+                    totalCommission: 0,
+                    rechargeAmount: 0,
+                    devices: [],
+                    incomeHistory: [],
+                    createdAt: new Date().toISOString()
+                };
+
+                // Firestore Document Save
+                await setDoc(doc(db, "users", user.uid), userData);
+
+                // 4. Update parent team trees
+                if (level1Parent) {
+                    await updateDoc(doc(db, "users", level1Parent), {
+                        "team.level1": arrayUnion(user.uid)
+                    });
+                }
+                if (level2Parent) {
+                    await updateDoc(doc(db, "users", level2Parent), {
+                        "team.level2": arrayUnion(user.uid)
+                    });
+                }
+                if (level3Parent) {
+                    await updateDoc(doc(db, "users", level3Parent), {
+                        "team.level3": arrayUnion(user.uid)
+                    });
+                }
+
+                // LocalStorage Update for seamless navigation
+                localStorage.setItem("loggedInUser", JSON.stringify(userData));
+                localStorage.setItem("userPhone", cleanPhone);
+
+                alert("✅ Registration Successful!");
+                window.location.href = "index.html";
+
+            } catch (error) {
+                console.error("Registration Error:", error);
+                if (error.code === 'auth/email-already-in-use') {
+                    alert("❌ Yeh mobile number pehle se registered hai!");
+                } else if (error.code === 'auth/configuration-not-found') {
+                    alert("❌ Please Firebase Console me Authentication > Sign-in method me 'Email/Password' ko ENABLE karein!");
+                } else {
+                    alert("❌ Registration fail ho gaya: " + error.message);
+                }
+                regBtn.disabled = false;
+                regBtn.innerText = "Register";
+            }
+        };
+    </script>
+</head>
+<body>
+
+<div class="card">
+    <div class="tabs">
+        <span onclick="window.location.href='login.html'">Login</span>
+        <span class="active">Register</span>
+    </div>
+
+    <input type="tel" id="phone" placeholder="Enter 10-digit phone number" maxlength="10">
+    <input type="password" id="pass" placeholder="Enter new password (min 6 chars)">
+    <input type="password" id="cpass" placeholder="Confirm password">
+    <input type="password" id="wpass" placeholder="Set Withdrawal Password (6 digits)" maxlength="6">
+    <input type="text" id="invCode" placeholder="Invitation Code (Optional)">
+
+    <button class="reg-btn" id="regBtn" onclick="registerUser()">Register</button>
+</div>
+
+</body>
+</html>

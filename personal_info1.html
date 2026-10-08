@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Information</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            EmailAuthProvider, 
+            reauthenticateWithCredential, 
+            updatePassword 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Aapka Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+
+        // Login Auth Check
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+            } else {
+                window.location.href = "login.html";
+            }
+        });
+
+        // 1. Change Login Password (Firebase Auth Update)
+        window.changeLoginPass = async function() {
+            if (!currentUser) {
+                alert("Please login first!");
+                return;
+            }
+
+            const oldPass = document.getElementById('oldLogin').value;
+            const newPass = document.getElementById('newLogin').value;
+
+            if (!oldPass || !newPass) {
+                alert("Please fill all fields!");
+                return;
+            }
+
+            if (newPass.length < 6) {
+                alert("❌ New password must be at least 6 characters!");
+                return;
+            }
+
+            try {
+                // Re-authenticate user before updating login password
+                const credential = EmailAuthProvider.credential(currentUser.email, oldPass);
+                await reauthenticateWithCredential(currentUser, credential);
+
+                // Update Login Password in Firebase Auth
+                await updatePassword(currentUser, newPass);
+
+                alert("✅ Login password updated successfully!");
+                document.getElementById('oldLogin').value = "";
+                document.getElementById('newLogin').value = "";
+
+            } catch (error) {
+                console.error("Login pass update error:", error);
+                if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                    alert("❌ Current login password is incorrect!");
+                } else {
+                    alert("❌ Failed to update login password! Please try again.");
+                }
+            }
+        };
+
+        // 2. Change Withdrawal Password (Firestore Doc Update)
+        window.changeWithdrawPass = async function() {
+            if (!currentUser) {
+                alert("Please login first!");
+                return;
+            }
+
+            const oldPass = document.getElementById('oldWithdraw').value;
+            const newPass = document.getElementById('newWithdraw').value;
+
+            if (!oldPass || !newPass) {
+                alert("Please fill all fields!");
+                return;
+            }
+
+            if (!/^\d{6}$/.test(newPass)) {
+                alert("❌ New withdrawal password must be exactly 6 digits!");
+                return;
+            }
+
+            try {
+                const userDocRef = doc(db, "users", currentUser.uid);
+                const userDoc = await getDoc(userDocRef);
+
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+
+                    if (userData.withdrawalPassword === oldPass) {
+                        // Update Firestore Withdrawal Password
+                        await updateDoc(userDocRef, {
+                            withdrawalPassword: newPass
+                        });
+
+                        alert("✅ Withdrawal password updated successfully!");
+                        document.getElementById('oldWithdraw').value = "";
+                        document.getElementById('newWithdraw').value = "";
+
+                    } else {
+                        alert("❌ Current withdrawal password incorrect!");
+                    }
+                } else {
+                    alert("❌ User record not found!");
+                }
+
+            } catch (error) {
+                console.error("Withdraw pass update error:", error);
+                alert("❌ Failed to update withdrawal password!");
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background-color: #f4f7f6;
+        }
+
+        .box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            margin-top: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="box">
+    <h3>Login Password</h3>
+
+    <input
+        type="password"
+        id="oldLogin"
+        placeholder="Current Login Password"
+    >
+
+    <input
+        type="password"
+        id="newLogin"
+        placeholder="New Login Password"
+    >
+
+    <button
+        onclick="changeLoginPass()"
+        style="background: #004a99;"
+    >
+        Update Login Password
+    </button>
+</div>
+
+
+<div class="box">
+    <h3>Withdrawal Password</h3>
+
+    <input
+        type="password"
+        id="oldWithdraw"
+        placeholder="Current Withdrawal Password"
+    >
+
+    <input
+        type="password"
+        id="newWithdraw"
+        placeholder="New Withdrawal Password (6 Digits)"
+        maxlength="6"
+    >
+
+    <button
+        onclick="changeWithdrawPass()"
+        style="background: #e67e22;"
+    >
+        Update Withdrawal Password
+    </button>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recharge</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let selectedChannel = "Pay - O";
+
+        // Check Login & Realtime Balance Sync
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                const userDocRef = doc(db, "users", user.uid);
+
+                // Realtime Balance Listener
+                onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const userData = docSnap.data();
+                        const currentBalance = userData.balance || 0;
+                        document.getElementById('disp-bal').innerText = parseFloat(currentBalance).toFixed(2);
+                    } else {
+                        document.getElementById('disp-bal').innerText = "0.00";
+                    }
+                }, (error) => {
+                    console.error("Balance fetch error:", error);
+                });
+
+            } else {
+                // Not Logged In Redirect
+                window.location.href = "login.html";
+            }
+        });
+
+        // Payment Option Select Function
+        window.selectOption = function(element, channelName) {
+            const options = document.querySelectorAll('.pay-option');
+            options.forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+            selectedChannel = channelName;
+        };
+
+        // Update Payment Button Amount
+        window.updateButton = function() {
+            let amt = document.getElementById('amount').value;
+            document.getElementById('btn-amt').innerText = amt || "0";
+        };
+
+        // Go to Payment Page
+        window.goToPayment = function() {
+            let amount = document.getElementById('amount').value;
+
+            if (!amount || amount < 254) {
+                alert('❌ Minimum top-up is 254 Rs.');
+                return;
+            }
+
+            // Redirect with amount and selected channel
+            window.location.href = `payment1.html?amount=${encodeURIComponent(amount)}&channel=${encodeURIComponent(selectedChannel)}`;
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding-bottom: 30px;
+        }
+
+        .header {
+            background: #1a3a6a;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .tabs {
+            display: flex;
+            background: #e0e0e0;
+            margin: 15px;
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .tab.active {
+            background: #1a3a6a;
+            color: white;
+        }
+
+        .box {
+            background: white;
+            margin: 15px;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .balance-info {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .amount-input {
+            width: 100%;
+            font-size: 20px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-weight: bold;
+            color: #1a3a6a;
+        }
+
+        .pay-option {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pay-option.selected {
+            border: 2px solid #e83e8c;
+            background: #fff0f7;
+            color: #e83e8c;
+        }
+
+        .pay-btn {
+            width: calc(100% - 30px);
+            margin: 10px 15px;
+            padding: 16px;
+            background: #1a3a6a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .note {
+            font-size: 12px;
+            color: #666;
+            background: #f9f9f9;
+            padding: 10px;
+            margin-top: 8px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        Recharge
+    </div>
+
+    <div class="tabs">
+        <div class="tab active">
+            💳 Recharge
+        </div>
+        <div class="tab" onclick="window.location.href='withdrawal1.html'">
+            💸 Withdraw
+        </div>
+    </div>
+
+    <div class="box">
+        <div class="balance-info">
+            Balance: ₹<span id="disp-bal">0.00</span>
+        </div>
+        <input
+            type="number"
+            class="amount-input"
+            id="amount"
+            value="254"
+            oninput="updateButton()"
+        >
+    </div>
+
+    <div class="box">
+        <div class="pay-option" onclick="selectOption(this, 'Pay - H')">
+            Pay - H
+        </div>
+        <div class="pay-option selected" onclick="selectOption(this, 'Pay - O')">
+            Pay - O 🔥
+        </div>
+        <div class="pay-option" onclick="selectOption(this, 'Pay - M')">
+            Pay - M
+        </div>
+    </div>
+
+    <button class="pay-btn" onclick="goToPayment()">
+        Pay ₹<span id="btn-amt">254</span>
+    </button>
+
+    <div class="box">
+        <div class="note">
+            • Minimum top-up: 254 Rs.
+        </div>
+        <div class="note">
+            • Please pay and submit UTR within the stipulated time.
+        </div>
+        <div class="note">
+            • Do not save old account top-ups.
+        </div>
+    </div>
+
+</body>
+
+</html>
+

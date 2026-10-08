@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>My Team</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let teamDataCache = null;
+        let currentLevel = 1;
+
+        // Check Login & Load Realtime Team Data
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                const userDocRef = doc(db, "users", user.uid);
+
+                // Realtime Sync Listener
+                onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        teamDataCache = docSnap.data();
+
+                        // Match correct structure from register.html (level1, level2, level3)
+                        const teamData = teamDataCache.team || { level1: [], level2: [], level3: [] };
+                        const totalSize = (teamData.level1?.length || 0) + (teamData.level2?.length || 0) + (teamData.level3?.length || 0);
+                        const totalComm = teamDataCache.totalCommission || teamDataCache.totalTeamCommission || 0;
+
+                        document.getElementById('teamSize').innerText = totalSize;
+                        document.getElementById('totalComm').innerText = `₹${totalComm}`;
+
+                        renderLevelData(currentLevel);
+                    } else {
+                        document.getElementById('teamList').innerHTML = '<div class="empty">यूजर डाटा उपलब्ध नहीं है।</div>';
+                    }
+                }, (error) => {
+                    console.error("Error fetching team data:", error);
+                    document.getElementById('teamList').innerHTML = '<div class="empty" style="color:red;">डाटा लोड करने में त्रुटि हुई!</div>';
+                });
+
+            } else {
+                // Check LocalStorage fallback before redirect
+                const localUser = JSON.parse(localStorage.getItem("loggedInUser"));
+                if (!localUser) {
+                    window.location.href = "login.html";
+                }
+            }
+        });
+
+        // Tab Switcher
+        window.loadTeam = function(level) {
+            currentLevel = level;
+
+            for (let i = 1; i <= 3; i++) {
+                const tabElem = document.getElementById(`tab${i}`);
+                if (tabElem) {
+                    tabElem.classList.toggle('active', i === level);
+                }
+            }
+
+            renderLevelData(level);
+        };
+
+        // Render Function with UIDs Fetching
+        async function renderLevelData(level) {
+            const container = document.getElementById('teamList');
+            if (!teamDataCache) return;
+
+            container.innerHTML = '<div class="empty">Loading team members...</div>';
+
+            const teamObj = teamDataCache.team || {};
+            // Keys match register.html: level1, level2, level3
+            const levelUids = teamObj[`level1`] || teamObj[`level2`] || teamObj[`level3`] ? (teamObj[`level${level}`] || []) : (teamObj[`l${level}`] || []);
+
+            if (levelUids.length === 0) {
+                container.innerHTML = `<div class="empty">Level ${level} में कोई मेंबर नहीं है।</div>`;
+                return;
+            }
+
+            let html = '';
+
+            // Fetch member details for UIDs
+            for (let item of levelUids) {
+                let memberUid = typeof item === 'string' ? item : item.uid;
+                let memberPhone = typeof item === 'object' ? item.phone : null;
+                let regDate = typeof item === 'object' ? item.joinedAt : null;
+                let rechargeAmt = typeof item === 'object' ? item.rechargeAmount : 0;
+
+                if (memberUid && (!memberPhone || typeof item === 'string')) {
+                    try {
+                        const mSnap = await getDoc(doc(db, "users", memberUid));
+                        if (mSnap.exists()) {
+                            const mData = mSnap.data();
+                            memberPhone = mData.phone || mData.mobile;
+                            regDate = mData.createdAt;
+                            rechargeAmt = mData.rechargeAmount || 0;
+                        }
+                    } catch (e) {
+                        console.error("Error fetching member:", e);
+                    }
+                }
+
+                const maskedPhone = memberPhone 
+                    ? memberPhone.replace(/(\d{3})\d{4}(\d{3})/, '$1****$2') 
+                    : 'User Member';
+
+                const displayDate = regDate 
+                    ? new Date(regDate).toLocaleDateString() 
+                    : 'N/A';
+
+                html += `
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                            <strong>📱 ${maskedPhone}</strong>
+                            <small style="color:#28a745; font-weight:bold;">Recharge: ₹${rechargeAmt}</small>
+                        </div>
+                        <div style="font-size:12px; color:#666;">
+                            Joined On: ${displayDate}
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+    </script>
+
+    <style>
+
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding-bottom: 30px;
+        }
+
+        .header {
+            background: #1a3a6a;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .summary {
+            background: white;
+            margin: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-around;
+            border: 1px solid #ddd;
+        }
+
+        .summary div {
+            text-align: center;
+        }
+
+        .summary small {
+            color: #666;
+        }
+
+        .summary b {
+            font-size: 16px;
+            color: #1a3a6a;
+        }
+
+        .tabs {
+            display: flex;
+            margin: 0 15px;
+            background: #d0dceb;
+            border-radius: 8px;
+            padding: 4px;
+            gap: 3px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px 5px;
+            text-align: center;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            color: #1a3a6a;
+        }
+
+        .tab.active {
+            background: white;
+            color: #1a3a6a;
+        }
+
+        .card {
+            background: white;
+            margin: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #1a3a6a;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .empty {
+            text-align: center;
+            color: #777;
+            margin-top: 30px;
+        }
+
+    </style>
+</head>
+
+
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        My Team
+    </div>
+
+    <!-- Summary -->
+    <div class="summary">
+        <div>
+            <small>Total Comm.</small>
+            <br>
+            <b id="totalComm">₹0</b>
+        </div>
+
+        <div>
+            <small>Team Size</small>
+            <br>
+            <b id="teamSize">0</b>
+        </div>
+    </div>
+
+    <!-- Three Levels -->
+    <div class="tabs">
+        <div class="tab active" id="tab1" onclick="loadTeam(1)">
+            L1 (20%)
+        </div>
+
+        <div class="tab" id="tab2" onclick="loadTeam(2)">
+            L2 (2%)
+        </div>
+
+        <div class="tab" id="tab3" onclick="loadTeam(3)">
+            L3 (1%)
+        </div>
+    </div>
+
+    <!-- Team List -->
+    <div id="teamList">
+        <div class="empty">Loading...</div>
+    </div>
+
+</body>
+</html>
+

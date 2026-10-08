@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Withdrawal</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            onSnapshot, 
+            runTransaction, 
+            collection, 
+            serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let userData = null;
+
+        // Auth & Realtime Balance Check
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                const userRef = doc(db, "users", user.uid);
+
+                // Realtime sync for balance and details
+                onSnapshot(userRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        userData = docSnap.data();
+                        const balance = parseFloat(userData.balance || 0);
+                        document.getElementById('user-bal').innerText = "₹" + balance.toFixed(2);
+
+                        // Pre-fill bank details if saved earlier
+                        if (userData.bankAccount) {
+                            if (!document.getElementById('accName').value) document.getElementById('accName').value = userData.bankAccount.holderName || '';
+                            if (!document.getElementById('accNumber').value) document.getElementById('accNumber').value = userData.bankAccount.accountNumber || '';
+                            if (!document.getElementById('ifscCode').value) document.getElementById('ifscCode').value = userData.bankAccount.ifsc || '';
+                        }
+                    } else {
+                        document.getElementById('user-bal').innerText = "₹0.00";
+                    }
+                }, (error) => {
+                    console.error("User data fetch error:", error);
+                    document.getElementById('user-bal').innerText = "₹0.00";
+                });
+
+            } else {
+                alert("Please login first!");
+                window.location.href = "login.html";
+            }
+        });
+
+        // Withdrawal Process Function
+        window.processWithdrawal = async function() {
+            if (!currentUser || !userData) {
+                alert("❌ User data not loaded properly!");
+                return;
+            }
+
+            const amountInput = document.getElementById('withdrawAmt').value.trim();
+            const wPassInput = document.getElementById('wPass').value.trim();
+            const accNameInput = document.getElementById('accName').value.trim();
+            const accNumberInput = document.getElementById('accNumber').value.trim();
+            const ifscCodeInput = document.getElementById('ifscCode').value.trim();
+            const withdrawBtn = document.getElementById('withdrawBtn');
+
+            const amount = parseFloat(amountInput);
+
+            // Validations
+            if (!amountInput || isNaN(amount) || amount <= 0) {
+                alert("⚠️ Kripya sahi withdrawal amount darj karein!");
+                return;
+            }
+
+            if (amount < 110) { // Minimum Withdrawal Limit
+                alert("⚠️ Minimum withdrawal amount ₹110 hai!");
+                return;
+            }
+
+            if (!wPassInput || wPassInput.length !== 6) {
+                alert("⚠️ Kripya 6-digit withdrawal password enter karein!");
+                return;
+            }
+
+            if (!accNameInput || !accNumberInput || !ifscCodeInput) {
+                alert("⚠️ Kripya sabhi bank account details poori bharein!");
+                return;
+            }
+
+            // Disable button during process
+            withdrawBtn.disabled = true;
+            withdrawBtn.innerText = "Processing...";
+
+            try {
+                const userRef = doc(db, "users", currentUser.uid);
+                const withdrawalRef = doc(collection(db, "withdrawals"));
+
+                await runTransaction(db, async (transaction) => {
+                    const userDoc = await transaction.get(userRef);
+
+                    if (!userDoc.exists()) {
+                        throw new Error("User record nahi mila!");
+                    }
+
+                    const dbData = userDoc.data();
+                    const currentBal = parseFloat(dbData.balance || 0);
+
+                    // 1. Password Verification
+                    if (dbData.withdrawPassword && dbData.withdrawPassword !== wPassInput) {
+                        throw new Error("Galat withdrawal password!");
+                    }
+
+                    // 2. Balance Verification
+                    if (currentBal < amount) {
+                        throw new Error("Paryapt balance nahi hai!");
+                    }
+
+                    const newBalance = currentBal - amount;
+
+                    // 3. Deduct balance & update bank details in user profile
+                    transaction.update(userRef, {
+                        balance: newBalance,
+                        bankAccount: {
+                            holderName: accNameInput,
+                            accountNumber: accNumberInput,
+                            ifsc: ifscCodeInput.toUpperCase()
+                        }
+                    });
+
+                    // 4. Create Withdrawal Request Document
+                    const now = new Date();
+                    const dateStr = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+                    transaction.set(withdrawalRef, {
+                        userId: currentUser.uid,
+                        phone: dbData.phone || currentUser.phoneNumber || 'N/A',
+                        amount: amount,
+                        status: "Pending",
+                        accountName: accNameInput,
+                        accountNumber: accNumberInput,
+                        ifsc: ifscCodeInput.toUpperCase(),
+                        createdAt: serverTimestamp(),
+                        dateStr: dateStr
+                    });
+                });
+
+                alert("✅ Withdrawal request safaltapoorvak submit ho gayi hai!");
+                document.getElementById('withdrawAmt').value = '';
+                document.getElementById('wPass').value = '';
+
+            } catch (error) {
+                console.error("Withdrawal Error:", error);
+                alert("❌ Withdrawal fail ho gaya: " + error.message);
+            } finally {
+                withdrawBtn.disabled = false;
+                withdrawBtn.innerText = "CONFIRM WITHDRAWAL";
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f4f7f6;
+            margin: 0;
+            padding: 20px 15px;
+        }
+
+        .header {
+            background: #1a237e;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        label {
+            font-size: 13px;
+            color: #555;
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        .withdraw-btn {
+            width: 100%;
+            padding: 15px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 15px;
+            margin-top: 25px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .withdraw-btn:disabled {
+            background: #a5d6a7;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <h3>Withdrawal</h3>
+</div>
+
+<div class="card">
+
+    <p style="font-size: 15px; margin-top: 0;">
+        Available Balance:
+        <strong id="user-bal" style="color: #27ae60; font-size: 18px;">Loading...</strong>
+    </p>
+
+    <label for="withdrawAmt">Withdrawal Amount</label>
+    <input
+        type="number"
+        id="withdrawAmt"
+        placeholder="Enter Amount (Min ₹110)"
+    >
+
+    <label for="wPass">Withdrawal Password (6 Digits)</label>
+    <input
+        type="password"
+        id="wPass"
+        maxlength="6"
+        inputmode="numeric"
+        placeholder="Enter 6-digit withdrawal password"
+    >
+
+    <label for="accName">Account Holder Name</label>
+    <input
+        type="text"
+        id="accName"
+        placeholder="Enter Name"
+    >
+
+    <label for="accNumber">Bank Account Number</label>
+    <input
+        type="text"
+        id="accNumber"
+        placeholder="Enter Account Number"
+    >
+
+    <label for="ifscCode">IFSC Code</label>
+    <input
+        type="text"
+        id="ifscCode"
+        placeholder="Enter IFSC Code"
+        style="text-transform: uppercase;"
+    >
+
+    <button
+        class="withdraw-btn"
+        id="withdrawBtn"
+        onclick="processWithdrawal()">
+        CONFIRM WITHDRAWAL
+    </button>
+
+</div>
+
+</body>
+</html>
+

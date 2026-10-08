@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Income Details</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let userDataCache = null;
+        let currentTab = 'my';
+
+        // Listen to User Data
+        function attachUserDataListener(uid) {
+            const userDocRef = doc(db, "users", uid);
+
+            onSnapshot(userDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    userDataCache = docSnap.data();
+
+                    // Update Top Summary Stats
+                    const bal = Number(userDataCache.balance || 0).toFixed(2);
+                    const totalProfit = Number(userDataCache.totalIncome || userDataCache.dailyIncome || 0).toFixed(2);
+                    
+                    document.getElementById('totalBalanceDisplay').innerText = `₹${bal}`;
+                    document.getElementById('dailyProfitDisplay').innerText = `₹${totalProfit}`;
+
+                    renderIncomeRecords(currentTab);
+                } else {
+                    document.getElementById('recordList').innerHTML = 
+                        "<p style='text-align:center; margin-top:20px; color:#888;'>यूजर डाटा उपलब्ध नहीं है।</p>";
+                }
+            }, (error) => {
+                console.error("Income details sync error:", error);
+                document.getElementById('recordList').innerHTML = 
+                    "<p style='text-align:center; margin-top:20px; color:red;'>डाटा लोड करने में त्रुटि हुई!</p>";
+            });
+        }
+
+        // Check Auth Status
+        onAuthStateChanged(auth, (user) => {
+            const savedUser = JSON.parse(localStorage.getItem("loggedInUser")) || {};
+
+            if (user) {
+                currentUser = user;
+                attachUserDataListener(user.uid);
+            } else if (savedUser.uid) {
+                attachUserDataListener(savedUser.uid);
+            } else {
+                window.location.href = "login.html";
+            }
+        });
+
+        // Switch Tabs
+        window.showIncome = function(type) {
+            currentTab = type;
+
+            document.getElementById('tabMy').classList.toggle('active', type === 'my');
+            document.getElementById('tabSub').classList.toggle('active', type === 'sub');
+
+            renderIncomeRecords(type);
+        };
+
+        // Render Function
+        function renderIncomeRecords(type) {
+            const container = document.getElementById('recordList');
+            if (!userDataCache) return;
+
+            if (type === 'my') {
+                const rawHistory = userDataCache.incomeHistory || userDataCache.dailyProfits || [];
+
+                // Filter out Purchases / Debits (Only keep positive profit entries)
+                const profitsOnly = rawHistory.filter(item => Number(item.amount) > 0);
+
+                if (profitsOnly.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-box">
+                            <p style='color:#888; margin: 0; font-weight: bold;'>कोई Daily Profit जमा नहीं हुआ है।</p>
+                            <small style='color:#aaa; display:block; margin-top:5px;'>आपके खरीदे गए Plan ka daily profit yahan har roz credit hota rahega.</small>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Newest First
+                const sortedProfits = [...profitsOnly].reverse();
+
+                let html = '';
+                sortedProfits.forEach((item) => {
+                    const amtVal = Number(item.amount || 0);
+                    const titleText = item.name || item.planName || item.title || 'Daily Mining Profit';
+
+                    html += `
+                        <div class="card">
+                            <div>
+                                <div class="desc">${titleText}</div>
+                                <div class="date">📅 ${item.date || item.dateStr || 'N/A'}</div>
+                            </div>
+                            <div class="amount" style="color: #28a745;">+₹${amtVal.toFixed(2)}</div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+
+            } else {
+                const subHistory = userDataCache.subordinateHistory || userDataCache.commissionHistory || [];
+
+                if (subHistory.length === 0) {
+                    container.innerHTML = "<p style='text-align:center; margin-top:20px; color:#888;'>कोई सबऑर्डिनेट इनकम / टीम कमीशन नहीं है।</p>";
+                    return;
+                }
+
+                const sortedSubHistory = [...subHistory].reverse();
+
+                let html = '';
+                sortedSubHistory.forEach((item) => {
+                    html += `
+                        <div class="card">
+                            <div>
+                                <div class="desc">${item.name || item.title || 'Team Referral Commission'}</div>
+                                <div class="date">📅 ${item.date || item.dateStr || 'N/A'}</div>
+                            </div>
+                            <div class="amount" style="color: #28a745;">+₹${Number(item.amount || 0).toFixed(2)}</div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            padding-bottom: 30px;
+        }
+
+        .header {
+            background: #1a237e;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* Top Summary Cards */
+        .summary-card {
+            background: white;
+            margin: 15px 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            text-align: center;
+        }
+
+        .summary-card div small {
+            font-size: 12px;
+            color: #666;
+            display: block;
+        }
+
+        .summary-card div b {
+            font-size: 18px;
+            color: #1a237e;
+            margin-top: 4px;
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            margin: 0 20px 15px 20px;
+            background: #d0dceb;
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #1a237e;
+            font-size: 14px;
+        }
+
+        .tab.active {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            background: white;
+            margin: 0 20px 10px 20px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        }
+
+        .amount {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .desc {
+            font-weight: bold;
+            font-size: 14px;
+            color: #2d3748;
+        }
+
+        .date {
+            font-size: 11px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .empty-box {
+            text-align: center;
+            background: white;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px dashed #cbd5e0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        Balance Details
+    </div>
+
+    <!-- Live Balance Summary -->
+    <div class="summary-card">
+        <div>
+            <small>Total Balance</small>
+            <b id="totalBalanceDisplay">₹0.00</b>
+        </div>
+        <div style="border-left: 1px solid #e2e8f0;"></div>
+        <div>
+            <small>Total Profit Earned</small>
+            <b id="dailyProfitDisplay" style="color: #28a745;">₹0.00</b>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <div class="tab active" id="tabMy" onclick="showIncome('my')">
+            My Income
+        </div>
+        <div class="tab" id="tabSub" onclick="showIncome('sub')">
+            Subordinate Income
+        </div>
+    </div>
+
+    <!-- Income History List -->
+    <div id="recordList">
+        <p style="text-align:center; margin-top:20px; color:#888;">लोड हो रहा है...</p>
+    </div>
+
+</body>
+</html>
+

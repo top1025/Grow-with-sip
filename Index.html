@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Mining App</title>
+
+    <!-- Firebase SDK Modular Import -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            onSnapshot, 
+            updateDoc, 
+            arrayUnion, 
+            increment 
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        let userDocRef = null;
+        let currentBalance = 0;
+
+        // User Auth Check & Realtime Balance Sync
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                userDocRef = doc(db, "users", user.uid);
+                
+                // Realtime Sync Listener
+                onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const userData = docSnap.data();
+                        currentBalance = Number(userData.balance || 0);
+
+                        // Balance Display Update
+                        const balanceDisplay = document.getElementById("user-balance-display");
+                        if (balanceDisplay) {
+                            balanceDisplay.innerText = "₹" + currentBalance.toLocaleString('en-IN');
+                        }
+
+                        // Auto Calculate Multi-Day Profit
+                        checkAndAddProfit(userData);
+                    } else {
+                        console.log("User Document Firebase me nahi mila!");
+                    }
+                }, (error) => {
+                    console.error("Firestore Listen Error:", error);
+                });
+
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        // Daily & Multi-Day Profit Auto Sync Function
+        async function checkAndAddProfit(userData) {
+            if (!userDocRef) return;
+
+            const devices = userData.devices || [];
+            if (devices.length === 0) return;
+
+            const todayDate = new Date();
+            todayDate.setHours(0, 0, 0, 0); // Reset time to midnight for exact date calculation
+
+            // Purchase date ya last profit date base banega
+            let lastDate = userData.lastProfitDate ? new Date(userData.lastProfitDate) : null;
+            
+            if (!lastDate) {
+                // Agar pehle profit nahi mila, toh pehle device purchase ki date lenge
+                const earliestPurchase = devices[0]?.purchaseDate;
+                lastDate = earliestPurchase ? new Date(earliestPurchase) : new Date();
+            }
+            lastDate.setHours(0, 0, 0, 0);
+
+            // Calculation of Gap Days
+            const timeDiff = todayDate.getTime() - lastDate.getTime();
+            const missedDays = Math.floor(timeDiff / (1000 * 3600 * 24));
+
+            // Agar 1 ya usse zyada din ka gap hai
+            if (missedDays > 0) {
+                // 1 day daily profit sum
+                const singleDayProfit = devices.reduce(
+                    (total, device) => total + Number(device.dailyProfit || 0),
+                    0
+                );
+
+                // Total profits for missed days
+                const totalProfitToCredit = singleDayProfit * missedDays;
+
+                if (totalProfitToCredit > 0) {
+                    try {
+                        const profitRecord = {
+                            name: missedDays > 1 ? `Daily Profit (${missedDays} Days)` : 'Daily Plan Profit',
+                            amount: totalProfitToCredit,
+                            date: new Date().toLocaleDateString('en-IN')
+                        };
+
+                        await updateDoc(userDocRef, {
+                            balance: increment(totalProfitToCredit),
+                            totalIncome: increment(totalProfitToCredit),
+                            dailyIncome: increment(totalProfitToCredit),
+                            incomeHistory: arrayUnion(profitRecord),
+                            lastProfitDate: todayDate.toISOString() // Store today as last processed
+                        });
+
+                        console.log(`✅ Success: ${missedDays} din ka total profit (₹${totalProfitToCredit}) credit ho gaya!`);
+                    } catch (err) {
+                        console.error("Profit calculation error:", err);
+                    }
+                }
+            }
+        }
+
+        // Plan Purchase Function
+        window.buyPlan = async function(planName, planPrice, profitAmount, imageSrc, btnElement) {
+            if (!currentUser || !userDocRef) {
+                alert("⚠️ Kripya pehle Login Karein!");
+                return;
+            }
+
+            if (currentBalance >= planPrice) {
+                if (btnElement) {
+                    btnElement.disabled = true;
+                    btnElement.innerText = "Processing...";
+                }
+
+                try {
+                    const now = new Date();
+                    const newDevice = {
+                        name: planName,
+                        dailyProfit: profitAmount,
+                        image: imageSrc,
+                        purchaseDate: now.toISOString()
+                    };
+
+                    const purchaseRecord = {
+                        name: planName + ' Purchase',
+                        amount: -planPrice,
+                        date: now.toLocaleDateString('en-IN')
+                    };
+
+                    // Firebase Sync
+                    await updateDoc(userDocRef, {
+                        balance: increment(-planPrice),
+                        devices: arrayUnion(newDevice),
+                        incomeHistory: arrayUnion(purchaseRecord),
+                        // Naye purchase par last profit date aaj hi set kar rahe hain
+                        lastProfitDate: now.toISOString() 
+                    });
+
+                    alert("✅ Plan Purchased Successfully!");
+                    window.location.href = 'my_profile1.html';
+
+                } catch (error) {
+                    console.error("Purchase error:", error);
+                    alert("❌ Purchase failed! Wapas try karein.");
+                    if (btnElement) {
+                        btnElement.disabled = false;
+                        btnElement.innerText = "Buy Now";
+                    }
+                }
+            } else {
+                alert("❌ बैलेंस कम है! वर्तमान बैलेंस: ₹" + currentBalance);
+            }
+        };
+    </script>
+
+    <style>
+        body { font-family: sans-serif; background-color: #f4f7f6; margin: 0; padding-bottom: 80px; }
+        .banner-container { width: 100%; overflow: hidden; }
+        .banner-container img { width: 100%; height: auto; display: block; }
+        
+        .user-header-card {
+            background: linear-gradient(135deg, #0a192f, #1a3a6a);
+            color: white;
+            padding: 15px 20px;
+            margin: 10px 15px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+        .user-header-card span { font-size: 14px; opacity: 0.9; }
+        .user-header-card h2 { margin: 5px 0 0 0; font-size: 22px; color: #2ecc71; }
+
+        .menu-bar { display: flex; justify-content: space-around; background: white; padding: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; }
+        .menu-item { text-align: center; font-size: 12px; cursor: pointer; flex: 1; }
+        .plan-card { background: white; margin: 10px 15px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; }
+        .plan-image-container { width: 100%; display: flex; justify-content: center; background-color: white; padding-top: 10px; }
+        .plan-image { max-width: 90%; height: auto; max-height: 150px; display: block; }
+        .plan-content { padding: 15px; }
+        .plan-title { font-weight: bold; font-size: 17px; margin-bottom: 10px; color: #1a3a6a; }
+        .buy-btn { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 8px; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        .buy-btn:disabled { background: #94d3a2; cursor: not-allowed; }
+        .pre-sale-btn { width: 100%; padding: 12px; background: #aab2b9; color: white; border: none; border-radius: 8px; font-weight: bold; margin-top: 10px; cursor: not-allowed; }
+        .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+        .detail-box { background: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; font-size: 13px; border: 1px solid #eee; }
+        .detail-box b { color: #007bff; font-size: 14px; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #ddd; z-index: 10; }
+        .nav-item { text-align: center; font-size: 11px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="banner-container"><img src="https://i.ibb.co/hxpVVpkY/sip-banner-1.png" alt="SIP Banner"></div>
+
+<!-- Live Balance Card -->
+<div class="user-header-card">
+    <div>
+        <span>Available Balance</span>
+        <h2 id="user-balance-display">₹0</h2>
+    </div>
+</div>
+
+<div class="menu-bar">
+    <div class="menu-item" onclick="window.location.href='recharge1.html'">💳<br>Recharge</div>
+    <div class="menu-item" onclick="window.location.href='withdrawal1.html'">💰<br>Withdraw</div>
+    <div class="menu-item" onclick="window.location.href='customer_care1.html'">🎧<br>Online</div>
+    <div class="menu-item" onclick="window.open('https://web.telegram.org/k/#+yfQSnd_23o81MzNl', '_blank')">✈<br>Channel</div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/Xfr8c2tb/1.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">Small Cap Fund</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹299</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹35</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹12,775</b></div>
+        </div>
+        <button class="buy-btn" onclick="buyPlan('Small Cap Fund', 299, 35, 'https://i.ibb.co/Xfr8c2tb/1.png', this)">Buy Now</button>
+    </div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/5X7pcspB/4.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">Mid Cap Fund</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹1999</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹240</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹87,600</b></div>
+        </div>
+        <button class="buy-btn" onclick="buyPlan('Mid Cap Fund', 1999, 240, 'https://i.ibb.co/5X7pcspB/4.png', this)">Buy Now</button>
+    </div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/G4hZbq6n/2.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">International Fund</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹4999</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹600</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹2,19,000</b></div>
+        </div>
+        <button class="buy-btn" onclick="buyPlan('International Fund', 4999, 600, 'https://i.ibb.co/G4hZbq6n/2.png', this)">Buy Now</button>
+    </div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/S7N4q9xB/5.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">Flexi Cap Fund</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹9999</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹1199</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹4,37,635</b></div>
+        </div>
+        <button class="pre-sale-btn" disabled>Pre-sale</button>
+    </div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/kg9gm7Jq/3.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">New Premium MAXX Fund</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹19999</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹2399</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹8,75,635</b></div>
+        </div>
+        <button class="pre-sale-btn" disabled>Pre-sale</button>
+    </div>
+</div>
+
+<div class="plan-card">
+    <div class="plan-image-container"><img src="https://i.ibb.co/R4zMh66L/file-000000005658820784579efc075fd00d.png" class="plan-image"></div>
+    <div class="plan-content">
+        <div class="plan-title">flexi cap Fund max</div>
+        <div class="details-grid">
+            <div class="detail-box">Price<br><b>₹29999</b></div>
+            <div class="detail-box">Daily Profit<br><b>₹3599</b></div>
+            <div class="detail-box">Days<br><b>365 Days</b></div>
+            <div class="detail-box">Total Profit<br><b>₹1,313,635</b></div>
+        </div>
+        <button class="pre-sale-btn" disabled>Pre-sale</button>
+    </div>
+</div>
+
+<div class="bottom-nav">
+    <div class="nav-item">📋<br>Plan</div>
+    <div class="nav-item" onclick="window.location.href='share1.html'">👥<br>Share</div>
+    <div class="nav-item" onclick="window.location.href='team1.html'">📈<br>Team</div>
+    <div class="nav-item" onclick="window.location.href='my_profile1.html'">👤<br>My</div>
+</div>
+
+</body>
+</html>
+

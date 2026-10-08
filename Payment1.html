@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Gateway</title>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Active Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        // Firebase Init
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentUser = null;
+        const upiId = "79832550@naviaxis";
+
+        // Get Params
+        const urlParams = new URLSearchParams(window.location.search);
+        const amount = parseFloat(urlParams.get('amount')) || 254;
+        const channel = urlParams.get('channel') || "Pay - O";
+
+        // Authentication Check
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+            } else {
+                const localUser = JSON.parse(localStorage.getItem("loggedInUser"));
+                if (localUser) {
+                    currentUser = localUser;
+                }
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Set Amount
+            document.getElementById('display-amount').innerText = amount;
+
+            // Generate UPI URLs
+            const paytmUrl = `paytmmp://pay?pa=${upiId}&pn=GrowWithSIP&am=${amount}&cu=INR`;
+            const phonePeUrl = `phonepe://pay?pa=${upiId}&pn=GrowWithSIP&am=${amount}&cu=INR`;
+
+            // Set Links
+            document.getElementById('paytm-link').href = paytmUrl;
+            document.getElementById('paytm-qr').href = paytmUrl;
+            document.getElementById('phonepe-link').href = phonePeUrl;
+            document.getElementById('phonepe-qr').href = phonePeUrl;
+
+            // Timer Counter (4 Minutes)
+            let timeLeft = 240;
+            const timerInterval = setInterval(() => {
+                let m = Math.floor(timeLeft / 60);
+                let s = timeLeft % 60;
+                document.getElementById('timer').innerText = `0${m}:${s < 10 ? '0' : ''}${s}`;
+
+                if (timeLeft > 0) {
+                    timeLeft--;
+                } else {
+                    clearInterval(timerInterval);
+                    alert("⏰ Payment session expired! Kripya firse try karein.");
+                    window.location.href = "recharge.html";
+                }
+            }, 1000);
+        });
+
+        // Tab Switching Function
+        window.showSection = function(type) {
+            const line = document.getElementById('active-line');
+            if (type === 'direct') {
+                document.getElementById('direct-section').style.display = "block";
+                document.getElementById('qr-section').style.display = "none";
+                line.style.left = "0%";
+                document.getElementById('tab1').classList.add('active');
+                document.getElementById('tab2').classList.remove('active');
+            } else {
+                document.getElementById('direct-section').style.display = "none";
+                document.getElementById('qr-section').style.display = "block";
+                line.style.left = "50%";
+                document.getElementById('tab2').classList.add('active');
+                document.getElementById('tab1').classList.remove('active');
+            }
+        };
+
+        // Submit Payment & Save to Firestore
+        window.verify = async function(inputId) {
+            const utr = document.getElementById(inputId).value.trim();
+
+            if (!utr || utr.length < 10) {
+                alert("❌ Kripya sahi UTR (12-digit UPI Reference ID) darj karein.");
+                return;
+            }
+
+            const btnId = inputId === 'utr-direct' ? 'btn-submit1' : 'btn-submit2';
+            const btn = document.getElementById(btnId);
+            btn.innerText = "Processing...";
+            btn.disabled = true;
+
+            try {
+                // Get User Phone/ID details
+                let savedUser = JSON.parse(localStorage.getItem("loggedInUser")) || {};
+                let userPhone = localStorage.getItem("userPhone") || savedUser.phone || (currentUser ? currentUser.phoneNumber || currentUser.email : "9045033740");
+                let uid = currentUser ? currentUser.uid : (savedUser.uid || "guest_user");
+
+                // 6 Second Timeout Protection
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Firebase Permission ya Network Timeout! Firestore Rules check karein.")), 6000)
+                );
+
+                const dbPromise = addDoc(collection(db, "recharges"), {
+                    userId: uid,
+                    phone: userPhone,
+                    amount: Number(amount),
+                    utr: utr,
+                    channel: channel,
+                    status: "Pending",
+                    createdAt: serverTimestamp(),
+                    dateStr: new Date().toLocaleString('en-IN')
+                });
+
+                // Race between Write & Timeout
+                await Promise.race([dbPromise, timeoutPromise]);
+
+                alert("✅ Payment UTR successfully submit ho gaya hai! Admin approval ke baad balance update ho jayega.");
+                window.location.href = "my_profile1.html";
+
+            } catch (error) {
+                console.error("Recharge submission error:", error);
+                alert("❌ Submit Error: " + error.message);
+                btn.disabled = false;
+                btn.innerText = "Submit";
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0eefc;
+            margin: 0;
+            padding: 10px;
+        }
+
+        .header {
+            background: #6f42c1;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 0 0 20px 20px;
+        }
+
+        .box {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            color: #888;
+        }
+
+        .tab.active {
+            color: #6f42c1;
+        }
+
+        #active-line {
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 50%;
+            height: 3px;
+            background-color: #6f42c1;
+            transition: 0.3s;
+        }
+
+        .upi-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .upi-btn {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            text-decoration: none;
+            color: #333;
+            display: block;
+            background: #f8f9fa;
+        }
+
+        .input-box {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 15px;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: #6f42c1;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .qr-box {
+            width: 220px;
+            height: 220px;
+            border: 1px solid #ddd;
+            margin: 0 auto 15px auto;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .qr-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h3>Payment Amount: ₹<span id="display-amount">...</span></h3>
+        <p>Time Remaining: <span id="timer">04:00</span></p>
+    </div>
+
+    <div class="box">
+
+        <div class="tabs" id="tab-container">
+            <div class="tab active" id="tab1" onclick="showSection('direct')">
+                Direct Transfer
+            </div>
+            <div class="tab" id="tab2" onclick="showSection('qr')">
+                Scan QRCode
+            </div>
+            <div id="active-line"></div>
+        </div>
+
+        <!-- DIRECT TRANSFER -->
+        <div id="direct-section">
+            <p><strong>Select Payment Method:</strong></p>
+
+            <div class="upi-container">
+                <a id="paytm-link" class="upi-btn">Paytm</a>
+                <a id="phonepe-link" class="upi-btn">PhonePe</a>
+            </div>
+
+            <p>Transfer to following UPI:</p>
+            <div style="background:#f4f4f4; padding:10px; border-radius:8px; margin-bottom:15px; font-weight:bold;">
+                79832550@naviaxis
+            </div>
+
+            <input type="text" id="utr-direct" class="input-box" placeholder="UTR (12 Digit UPI Ref ID)">
+
+            <button class="submit-btn" id="btn-submit1" onclick="verify('utr-direct')">
+                Submit
+            </button>
+        </div>
+
+        <!-- QR SECTION -->
+        <div id="qr-section" style="display:none;">
+            <p><strong>Select Payment Method:</strong></p>
+
+            <div class="upi-container">
+                <a id="paytm-qr" class="upi-btn">Paytm</a>
+                <a id="phonepe-qr" class="upi-btn">PhonePe</a>
+            </div>
+
+            <!-- Direct QR Code Image Link -->
+            <div class="qr-box">
+                <img id="qr-code-img" src="https://i.ibb.co/HL0hdjqf/IMG-20261003-071207.jpg" alt="UPI QR Code">
+            </div>
+
+            <input type="text" id="utr-qr" class="input-box" placeholder="Payment successful enter UTR">
+
+            <button class="submit-btn" id="btn-submit2" onclick="verify('utr-qr')">
+                Submit
+            </button>
+        </div>
+
+    </div>
+
+</body>
+</html>
+

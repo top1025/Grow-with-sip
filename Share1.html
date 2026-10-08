@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Share Invitation</title>
+    
+    <!-- QRCode Generator CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background: #0a192f;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            padding: 20px 10px;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: #f4f7fe;
+            border-radius: 20px;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .header-title {
+            text-align: center;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 15px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .card h3 {
+            margin: 0 0 10px 0;
+            color: #1a2a6c;
+        }
+        .card p {
+            color: #666;
+            font-size: 14px;
+            margin: 0 0 15px 0;
+        }
+        #qrcode {
+            display: flex;
+            justify-content: center;
+            margin: 10px auto;
+        }
+        #qrcode img {
+            border: 4px solid #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .label {
+            font-size: 12px;
+            color: #888;
+            text-align: left;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .input-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 15px;
+            font-weight: bold;
+            font-size: 15px;
+            word-break: break-all;
+        }
+        .copy-btn {
+            background: #1a2a6c;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            margin-left: 10px;
+            white-space: nowrap;
+        }
+        .whatsapp-btn {
+            width: 100%;
+            background: #25d366;
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+        .rewards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .reward-card {
+            background: white;
+            padding: 12px 5px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: bold;
+            border: 1px solid #e2e8f0;
+        }
+        .reward-card span {
+            display: block;
+            color: #27ae60;
+            font-size: 16px;
+            margin-top: 4px;
+        }
+        .info-box {
+            background: #ebf3fe;
+            color: #2b6cb0;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            text-align: center;
+        }
+    </style>
+
+    <!-- Firebase Modular SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtsqtuixJrKPutV87ZcY33TWY4pTqD_Es",
+            authDomain: "my-sip-f413e.firebaseapp.com",
+            projectId: "my-sip-f413e",
+            storageBucket: "my-sip-f413e.firebasestorage.app",
+            messagingSenderId: "922732328257",
+            appId: "1:922732328257:web:9b277c3e4edc52f6919dc0",
+            measurementId: "G-X7MCR83TDC"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let currentRefCode = "";
+        let currentRefLink = "";
+
+        // Check active login user dynamically
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                let refCode = "";
+
+                try {
+                    // Fetch user document from Firestore
+                    const userSnap = await getDoc(doc(db, "users", user.uid));
+                    if (userSnap.exists()) {
+                        const userData = userSnap.data();
+                        refCode = userData.myReferralCode || userData.inviteCode || userData.referralCode || "";
+                    }
+                } catch (e) {
+                    console.log("Firestore error:", e);
+                }
+
+                // Fallback using LocalStorage or UID if Firestore missing code
+                if (!refCode) {
+                    let savedUser = JSON.parse(localStorage.getItem("loggedInUser")) || {};
+                    refCode = savedUser.myReferralCode || savedUser.inviteCode || user.uid.slice(-6);
+                }
+
+                currentRefCode = refCode;
+                const baseUrl = window.location.origin + window.location.pathname.replace('share.html', 'register.html');
+                currentRefLink = `${baseUrl}?ref=${refCode}`;
+
+                // UI Updates
+                document.getElementById('invCodeText').innerText = currentRefCode;
+                document.getElementById('invLinkText').innerText = currentRefLink;
+
+                // Generate QR Code
+                document.getElementById('qrcode').innerHTML = "";
+                new QRCode(document.getElementById("qrcode"), {
+                    text: currentRefLink,
+                    width: 140,
+                    height: 140,
+                    colorDark : "#0a192f",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+            } else {
+                // If not logged in, redirect to login page
+                window.location.href = "login.html";
+            }
+        });
+
+        // Copy Code
+        window.copyCode = function() {
+            navigator.clipboard.writeText(currentRefCode);
+            alert("✅ Invitation Code Copied: " + currentRefCode);
+        };
+
+        // Copy Link
+        window.copyLink = function() {
+            navigator.clipboard.writeText(currentRefLink);
+            alert("✅ Invitation Link Copied!");
+        };
+
+        // Share on WhatsApp
+        window.shareWhatsApp = function() {
+            const msg = `Join Biviman Miner and earn money easily from home!\nUse my Invitation Code: ${currentRefCode}\nRegister here: ${currentRefLink}`;
+            window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+        };
+    </script>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-title">Share</div>
+
+    <!-- Main QR Card -->
+    <div class="card">
+        <h3>Invitation Program</h3>
+        <p>Earn money easily from home, stable income</p>
+        <div id="qrcode">Loading QR Code...</div>
+    </div>
+
+    <!-- Invitation Link Box -->
+    <div class="label">Share invitation link</div>
+    <div class="input-box">
+        <span id="invLinkText">Loading...</span>
+        <button class="copy-btn" onclick="copyLink()">Copy</button>
+    </div>
+
+    <!-- WhatsApp Share Button -->
+    <button class="whatsapp-btn" onclick="shareWhatsApp()">
+        Share on WhatsApp
+    </button>
+
+    <!-- Invitation Code Box -->
+    <div class="label">Invitation Code</div>
+    <div class="input-box">
+        <span id="invCodeText">Loading...</span>
+        <button class="copy-btn" onclick="copyCode()">Copy</button>
+    </div>
+
+    <!-- Referral Rewards -->
+    <div class="label">Referral Rewards</div>
+    <div class="rewards-grid">
+        <div class="reward-card">Level 1 <span>20%</span></div>
+        <div class="reward-card">Level 2 <span>2%</span></div>
+        <div class="reward-card">Level 3 <span>1%</span></div>
+    </div>
+
+    <div class="info-box">
+        Share the invitation link to major social platforms to build a team and get up to 23% commission.
+    </div>
+</div>
+
+</body>
+</html>
